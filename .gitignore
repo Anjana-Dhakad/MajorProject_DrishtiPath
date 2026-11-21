@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+*.pyc
+road_hazards.db
+models/*.pt
+uploads/*
