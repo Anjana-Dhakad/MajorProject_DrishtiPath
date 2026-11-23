@@ -5,6 +5,15 @@ from datetime import datetime
 
 DB_NAME = "road_hazards.db"
 
+# Available report statuses
+REPORT_STATUSES = [
+    "Pending",
+    "Verified",
+    "In Progress",
+    "Resolved",
+    "Rejected"
+]
+
 
 def get_connection():
     return sqlite3.connect(DB_NAME)
@@ -14,6 +23,7 @@ def initialize_database():
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Create reports table (for new installations)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,13 +34,28 @@ def initialize_database():
             severity TEXT,
             latitude REAL,
             longitude REAL,
-            location_name TEXT
+            location_name TEXT,
+            status TEXT NOT NULL DEFAULT 'Pending'
         )
     """)
+
+    # Migration: Add status column to existing database
+    cursor.execute("PRAGMA table_info(reports)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    if "status" not in columns:
+        cursor.execute("""
+            ALTER TABLE reports
+            ADD COLUMN status TEXT NOT NULL DEFAULT 'Pending'
+        """)
 
     conn.commit()
     conn.close()
 
+
+# =========================
+# SAVE NEW REPORT
+# =========================
 
 def save_report(
     image_name,
@@ -56,9 +81,10 @@ def save_report(
             severity,
             latitude,
             longitude,
-            location_name
+            location_name,
+            status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         report_date,
         image_name,
@@ -67,7 +93,8 @@ def save_report(
         severity,
         latitude,
         longitude,
-        location_name
+        location_name,
+        "Pending"
     ))
 
     report_id = cursor.lastrowid
@@ -77,6 +104,10 @@ def save_report(
 
     return report_id
 
+
+# =========================
+# GET ALL REPORTS
+# =========================
 
 def get_all_reports():
     conn = get_connection()
@@ -95,6 +126,67 @@ def get_all_reports():
 
     return reports
 
+
+# =========================
+# UPDATE REPORT STATUS
+# =========================
+
+def update_report_status(report_id, new_status):
+    if new_status not in REPORT_STATUSES:
+        raise ValueError(
+            f"Invalid status: {new_status}. "
+            f"Allowed statuses: {REPORT_STATUSES}"
+        )
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE reports
+        SET status = ?
+        WHERE id = ?
+    """, (new_status, report_id))
+
+    updated = cursor.rowcount > 0
+
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
+# =========================
+# GET STATUS COUNTS
+# =========================
+
+def get_report_status_statistics():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT status, COUNT(*)
+        FROM reports
+        GROUP BY status
+    """)
+
+    results = cursor.fetchall()
+    conn.close()
+
+    # Include all statuses, even if count is zero
+    status_counts = {
+        status: 0 for status in REPORT_STATUSES
+    }
+
+    for status, count in results:
+        if status in status_counts:
+            status_counts[status] = count
+
+    return status_counts
+
+
+# =========================
+# DASHBOARD STATISTICS
+# =========================
 
 def get_report_statistics():
     conn = get_connection()
@@ -124,6 +216,22 @@ def get_report_statistics():
     """)
     low_severity = cursor.fetchone()[0]
 
+    # Report status statistics
+    cursor.execute("""
+        SELECT status, COUNT(*)
+        FROM reports
+        GROUP BY status
+    """)
+    status_results = cursor.fetchall()
+
+    status_counts = {
+        status: 0 for status in REPORT_STATUSES
+    }
+
+    for status, count in status_results:
+        if status in status_counts:
+            status_counts[status] = count
+
     conn.close()
 
     return {
@@ -131,9 +239,20 @@ def get_report_statistics():
         "total_hazards": total_hazards,
         "high": high_severity,
         "medium": medium_severity,
-        "low": low_severity
+        "low": low_severity,
+
+        # New status statistics
+        "pending": status_counts["Pending"],
+        "verified": status_counts["Verified"],
+        "in_progress": status_counts["In Progress"],
+        "resolved": status_counts["Resolved"],
+        "rejected": status_counts["Rejected"]
     }
 
+
+# =========================
+# DELETE ALL REPORTS
+# =========================
 
 def delete_all_reports():
     conn = get_connection()
