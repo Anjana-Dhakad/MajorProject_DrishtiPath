@@ -4,3 +4,4 @@ __pycache__/
 road_hazards.db
 models/*.pt
 uploads/*
+.streamlit/secrets.toml
