@@ -7,3 +7,4 @@ pandas
 plotly
 folium
 streamlit-folium
+imageio-ffmpeg>=0.5.1
