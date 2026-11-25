@@ -35,7 +35,11 @@ def initialize_database():
             latitude REAL,
             longitude REAL,
             location_name TEXT,
-            status TEXT NOT NULL DEFAULT 'Pending'
+            status TEXT NOT NULL DEFAULT 'Pending',
+            media_type TEXT NOT NULL DEFAULT 'image',
+            media_path TEXT,
+            processed_media_path TEXT,
+            report_metadata TEXT
         )
     """)
 
@@ -48,6 +52,17 @@ def initialize_database():
             ALTER TABLE reports
             ADD COLUMN status TEXT NOT NULL DEFAULT 'Pending'
         """)
+
+    # Backward-compatible migration for image/video evidence and analysis metadata.
+    migrations = {
+        "media_type": "TEXT NOT NULL DEFAULT 'image'",
+        "media_path": "TEXT",
+        "processed_media_path": "TEXT",
+        "report_metadata": "TEXT",
+    }
+    for column_name, column_type in migrations.items():
+        if column_name not in columns:
+            cursor.execute(f"ALTER TABLE reports ADD COLUMN {column_name} {column_type}")
 
     conn.commit()
     conn.close()
@@ -64,7 +79,11 @@ def save_report(
     severity,
     latitude,
     longitude,
-    location_name
+    location_name,
+    media_type="image",
+    media_path=None,
+    processed_media_path=None,
+    report_metadata=None,
 ):
     conn = get_connection()
     cursor = conn.cursor()
@@ -82,9 +101,13 @@ def save_report(
             latitude,
             longitude,
             location_name,
-            status
+            status,
+            media_type,
+            media_path,
+            processed_media_path,
+            report_metadata
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         report_date,
         image_name,
@@ -94,7 +117,11 @@ def save_report(
         latitude,
         longitude,
         location_name,
-        "Pending"
+        "Pending",
+        media_type,
+        media_path,
+        processed_media_path,
+        json.dumps(report_metadata) if report_metadata is not None else None,
     ))
 
     report_id = cursor.lastrowid
